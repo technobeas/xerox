@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Admin Dashboard — Xerox</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+      body {
+        font-family: system-ui, Segoe UI, Roboto, Arial;
+        max-width: 1100px;
+        margin: 24px auto;
+        padding: 0 16px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        padding: 8px;
+        border: 1px solid #ddd;
+        text-align: left;
+      }
+      th {
+        background: #f5f7fb;
+      }
+      a.btn {
+        padding: 6px 8px;
+        border-radius: 6px;
+        text-decoration: none;
+        background: #3a7bf6;
+        color: white;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Admin Dashboard</h1>
+    <p>Click "Refresh" to load latest jobs.</p>
+    <div>
+      <label
+        >Secret: <input id="secret" type="text" placeholder="UPLOAD_SECRET"
+      /></label>
+      <button onclick="loadJobs()">Refresh</button>
+    </div>
+    <div id="list" style="margin-top: 12px"></div>
+
+    <script>
+      const WEB_APP_URL =
+        "https://script.google.com/macros/s/AKfycbwqRHEBqeSQ0FmClvqMW4vt7kolf0IfGYC8V58fNNuQ3VhULLvH5Nfa-5kNL4KSVWq2/exec"; // replace
+
+      function loadJobs() {
+        const secret = document.getElementById("secret").value.trim();
+        if (!secret) return alert("Enter secret");
+
+        const url = `${WEB_APP_URL}?action=list&secret=${encodeURIComponent(
+          secret
+        )}&_=${Date.now()}`;
+        fetch(url)
+          .then((r) => r.json())
+          .then((result) => {
+            if (!result.success) {
+              return (document.getElementById(
+                "list"
+              ).innerHTML = `<p style="color:red">${
+                result.error || "Failed"
+              }</p>`);
+            }
+            const rows = result.data || [];
+            if (!rows.length)
+              return (document.getElementById("list").innerHTML =
+                "<p>No jobs</p>");
+
+            let html =
+              "<table><thead><tr><th>Time</th><th>Customer</th><th>Phone</th><th>File</th><th>Paper</th><th>Color</th><th>Copies</th><th>Cost</th><th>Action</th></tr></thead><tbody>";
+            rows.forEach((r) => {
+              const time = r.timestamp
+                ? new Date(r.timestamp).toLocaleString()
+                : "";
+              html += `<tr>
+          <td>${time}</td>
+          <td>${escapeHtml(r.customer)}</td>
+          <td>${escapeHtml(r.phone)}</td>
+          <td><a href="${r.fileUrl}" target="_blank">${escapeHtml(
+                r.originalFileName
+              )}</a></td>
+          <td>${escapeHtml(r.paperSize)}</td>
+          <td>${escapeHtml(r.color)}</td>
+          <td>${escapeHtml(r.copies)}</td>
+          <td>₹${escapeHtml(r.cost)}</td>
+          <td><a class="btn" href="${r.fileUrl}" target="_blank">Open</a></td>
+        </tr>`;
+            });
+            html += "</tbody></table>";
+            document.getElementById("list").innerHTML = html;
+          })
+          .catch((err) => {
+            console.error(err);
+            document.getElementById("list").innerHTML =
+              '<p style="color:red">Failed to load</p>';
+          });
+      }
+
+      function escapeHtml(s) {
+        if (s === undefined || s === null) return "";
+        return String(s).replace(/[&<>"']/g, function (m) {
+          return {
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#39;",
+          }[m];
+        });
+      }
+    </script>
+  </body>
+</html>

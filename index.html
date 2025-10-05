@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Send Files — Xerox</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+      body {
+        font-family: system-ui, Segoe UI, Roboto, Arial;
+        max-width: 900px;
+        margin: 24px auto;
+        padding: 0 16px;
+      }
+      .upload-group {
+        border: 1px solid #ddd;
+        padding: 12px;
+        border-radius: 8px;
+        margin-bottom: 12px;
+        position: relative;
+      }
+      .remove-group {
+        position: absolute;
+        right: 8px;
+        top: 8px;
+        background: #f66;
+        color: #fff;
+        border: none;
+        border-radius: 50%;
+        width: 28px;
+        height: 28px;
+        cursor: pointer;
+      }
+      .btn {
+        padding: 8px 12px;
+        border-radius: 6px;
+        border: 0;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Send Files</h1>
+
+    <div>
+      <label
+        >Customer Name:
+        <input id="customerName" type="text" placeholder="Full name"
+      /></label>
+      <label
+        >Phone: <input id="phone" type="text" placeholder="Phone (optional)"
+      /></label>
+    </div>
+
+    <div id="uploadGroupsContainer"></div>
+
+    <div style="margin-top: 12px">
+      <button class="btn" onclick="addUploadGroup()">+ Add File Group</button>
+      <button class="btn" onclick="submitAll()">Submit All</button>
+    </div>
+
+    <div id="status" style="margin-top: 16px"></div>
+
+    <script>
+      const WEB_APP_URL =
+        "https://script.google.com/macros/s/AKfycbwqRHEBqeSQ0FmClvqMW4vt7kolf0IfGYC8V58fNNuQ3VhULLvH5Nfa-5kNL4KSVWq2/exec"; // replace // replace
+      const UPLOAD_SECRET = "Tabish"; // must match Apps Script
+
+      function addUploadGroup() {
+        const container = document.getElementById("uploadGroupsContainer");
+        const group = document.createElement("div");
+        group.className = "upload-group";
+        group.innerHTML = `
+    <button class="remove-group" onclick="this.parentNode.remove()">×</button>
+    <div>
+      <label>Select Files: <input type="file" multiple class="fileInput" /></label>
+    </div>
+    <div>
+      <label>Color: <input type="checkbox" class="colorOption" checked /></label>
+      <label>Copies: <input type="number" class="copiesInput" value="1" min="1" /></label>
+      <label>Paper Size:
+        <select class="paperSize">
+          <option value="A4" selected>A4</option>
+          <option value="A3">A3</option>
+          <option value="Letter">Letter</option>
+          <option value="Legal">Legal</option>
+        </select>
+      </label>
+    </div>
+    <div>
+      <label>Notes (optional): <input type="text" class="notesInput" /></label>
+    </div>
+  `;
+        container.appendChild(group);
+      }
+
+      function calculateCost(copies, color) {
+        return copies * (10 + (color ? 5 : 0));
+      }
+
+      function showStatus(msg, isError) {
+        const s = document.getElementById("status");
+        s.innerHTML = `<div style="padding:10px;border-radius:6px;background:${
+          isError ? "#fee" : "#efe"
+        };border:1px solid ${isError ? "#fdd" : "#cfc"}">${msg}</div>`;
+      }
+
+      function submitAll() {
+        const customerName = document
+          .getElementById("customerName")
+          .value.trim();
+        const phone = document.getElementById("phone").value.trim();
+        if (!customerName) return showStatus("Please enter your name", true);
+
+        const groups = Array.from(document.querySelectorAll(".upload-group"));
+        if (!groups.length) return showStatus("Add a file group first", true);
+
+        // Collect all file uploads and send one request per group (or combine multiple files in a group)
+        // We'll send one POST containing customer info and all files across groups
+        const filesToUpload = [];
+
+        groups.forEach((g) => {
+          const fileInputs = g.querySelectorAll(".fileInput");
+          const color = g.querySelector(".colorOption").checked;
+          const copies =
+            parseInt(g.querySelector(".copiesInput").value, 10) || 1;
+          const paperSize = g.querySelector(".paperSize").value;
+          const notes = g.querySelector(".notesInput").value || "";
+
+          fileInputs.forEach((fi) => {
+            for (const f of fi.files) {
+              filesToUpload.push({
+                file: f,
+                color,
+                copies,
+                paperSize,
+                notes,
+              });
+            }
+          });
+        });
+
+        if (!filesToUpload.length)
+          return showStatus("Select at least one file", true);
+
+        // Convert all files to data URLs, then POST once
+        const readers = filesToUpload.map((item) => {
+          return new Promise((resolve, reject) => {
+            const r = new FileReader();
+            r.onload = () => {
+              resolve({
+                fileName: item.file.name,
+                mimeType: item.file.type || "application/octet-stream",
+                fileData: r.result,
+                color: item.color,
+                copies: item.copies,
+                paperSize: item.paperSize,
+                notes: item.notes,
+              });
+            };
+            r.onerror = reject;
+            r.readAsDataURL(item.file);
+          });
+        });
+
+        showStatus("Preparing files...");
+
+        Promise.all(readers)
+          .then((files) => {
+            // We will POST metadata and all files. For simplicity we'll include only global copies/color (first file's values)
+            const payload = {
+              secret: UPLOAD_SECRET,
+              customerName,
+              phone,
+              color: files[0].color,
+              copies: files[0].copies,
+              paperSize: files[0].paperSize,
+              notes: files
+                .map((f) => f.notes)
+                .filter(Boolean)
+                .join(" | "),
+              files: files.map((f) => ({
+                fileName: f.fileName,
+                mimeType: f.mimeType,
+                fileData: f.fileData,
+              })),
+            };
+
+            showStatus("Uploading to server...");
+
+            fetch(WEB_APP_URL, {
+              method: "POST",
+              mode: "cors",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            })
+              .then((r) => r.json())
+              .then((resp) => {
+                if (resp && resp.success) {
+                  showStatus(
+                    `Upload successful: ${resp.results.length} file(s) uploaded.`
+                  );
+                  // Optionally clear form
+                  document.getElementById("uploadGroupsContainer").innerHTML =
+                    "";
+                  addUploadGroup();
+                } else {
+                  showStatus(
+                    "Upload error: " + (resp.error || "Unknown"),
+                    true
+                  );
+                }
+              })
+              .catch((err) => {
+                console.error(err);
+                showStatus("Upload failed. See console.", true);
+              });
+          })
+          .catch((err) => {
+            console.error(err);
+            showStatus("Failed to read files", true);
+          });
+      }
+
+      // Initial group
+      addUploadGroup();
+    </script>
+  </body>
+</html>
